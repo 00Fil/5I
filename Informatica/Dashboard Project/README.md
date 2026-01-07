@@ -1,209 +1,1025 @@
-Schema login/registrazione/dashboard
-1 Database (users e comments)
+# Guida Completa: Sistema Login/Registrazione/Dashboard
+
+## 🎯 Panoramica del Sistema
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    ARCHITETTURA GENERALE                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│   UTENTE                                                        │
+│     │                                                           │
+│     ▼                                                           │
+│   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐        │
+│   │   FORM      │───▶│   LOGICA    │───▶│  DATABASE   │        │
+│   │   (HTML)    │    │   (PHP)     │    │   (MySQL)   │        │
+│   └─────────────┘    └─────────────┘    └─────────────┘        │
+│         ▲                  │                                    │
+│         │                  │                                    │
+│         └──────────────────┘                                    │
+│              (redirect + sessione)                              │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 1️⃣ DATABASE - Dove Memorizziamo i Dati
+
+### Tabella `users` - Gli Utenti
+
+```sql
 CREATE TABLE users (
-id_user INT AUTO_INCREMENT PRIMARY KEY,
-username VARCHAR(50) NOT NULL UNIQUE,
-email VARCHAR(100) NOT NULL UNIQUE,
-pasword VARCHAR(255) NOT NULL,
-tentativi INT DEFAULT 0, -- per blocco tentativi
-bloccato_fino DATETIME DEFAULT NULL -- per blocco temporaneo
+    id_user INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    email VARCHAR(100) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL,
+    tentativi INT DEFAULT 0,
+    bloccato_fino DATETIME DEFAULT NULL
 );
+```
+
+**Spiegazione riga per riga:**
+
+```
+┌────────────────────┬──────────────────────────────────────────────────┐
+│ COLONNA            │ SPIEGAZIONE                                      │
+├────────────────────┼──────────────────────────────────────────────────┤
+│ id_user            │ Numero unico per ogni utente                     │
+│ INT                │ → è un numero intero                             │
+│ AUTO_INCREMENT     │ → si incrementa da solo (1, 2, 3...)             │
+│ PRIMARY KEY        │ → è l'identificatore principale                  │
+├────────────────────┼──────────────────────────────────────────────────┤
+│ username           │ Nome scelto dall'utente                          │
+│ VARCHAR(50)        │ → testo fino a 50 caratteri                      │
+│ NOT NULL           │ → obbligatorio, non può essere vuoto             │
+│ UNIQUE             │ → non possono esistere due uguali                │
+├────────────────────┼──────────────────────────────────────────────────┤
+│ email              │ Email dell'utente                                │
+│ VARCHAR(100)       │ → testo fino a 100 caratteri                     │
+│ NOT NULL UNIQUE    │ → obbligatoria e unica                           │
+├────────────────────┼──────────────────────────────────────────────────┤
+│ password           │ Password CRIPTATA (hash)                         │
+│ VARCHAR(255)       │ → 255 caratteri perché l'hash è lungo            │
+│ NOT NULL           │ → obbligatoria                                   │
+├────────────────────┼──────────────────────────────────────────────────┤
+│ tentativi          │ Conta i login falliti consecutivi                │
+│ INT DEFAULT 0      │ → parte da 0                                     │
+├────────────────────┼──────────────────────────────────────────────────┤
+│ bloccato_fino      │ Data/ora fino a quando l'account è bloccato      │
+│ DATETIME DEFAULT   │ → NULL significa "non bloccato"                  │
+│ NULL               │                                                  │
+└────────────────────┴──────────────────────────────────────────────────┘
+```
+
+**Esempio visivo di come appare la tabella:**
+```
++─────────+──────────+─────────────────────+──────────────────────+───────────+───────────────+
+│ id_user │ username │ email               │ password             │ tentativi │ bloccato_fino │
++─────────+──────────+─────────────────────+──────────────────────+───────────+───────────────+
+│ 1       │ Mario    │ mario@email.com     │ $2y$10$xyz...        │ 0         │ NULL          │
+│ 2       │ Luigi    │ luigi@email.com     │ $2y$10$abc...        │ 3         │ NULL          │
+│ 3       │ Peach    │ peach@email.com     │ $2y$10$def...        │ 5         │ 2024-01-15... │
++─────────+──────────+─────────────────────+──────────────────────+───────────+───────────────+
+```
+
+### Tabella `comments` - I Commenti
+
+```sql
 CREATE TABLE comments (
-id_comm INT AUTO_INCREMENT PRIMARY KEY,
-id_user INT NOT NULL,
-content TEXT NOT NULL,
-FOREIGN KEY (id_user) REFERENCES users(id_user) ON DELETE CASCADE
+    id_comm INT AUTO_INCREMENT PRIMARY KEY,
+    id_user INT NOT NULL,
+    content TEXT NOT NULL,
+    FOREIGN KEY (id_user) REFERENCES users(id_user) ON DELETE CASCADE
 );
+```
 
-2 Connessione PHP (connessione.php)
-&lt;?php
-$hostname = &quot;localhost&quot;;
-$dbname = &quot;mensajes&quot;;
-$user = &quot;root&quot;;
-$pass = &quot;&quot;;
+**Spiegazione:**
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         FOREIGN KEY SPIEGATA                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  TABELLA users              TABELLA comments                            │
+│  ┌───────────┐              ┌───────────┐                               │
+│  │ id_user   │◄─────────────│ id_user   │  ← FOREIGN KEY                │
+│  │ username  │              │ id_comm   │                               │
+│  │ email     │              │ content   │                               │
+│  │ password  │              └───────────┘                               │
+│  └───────────┘                                                          │
+│                                                                         │
+│  FOREIGN KEY (id_user) REFERENCES users(id_user)                        │
+│  ───────────────────────────────────────────────                        │
+│  Significa: "id_user nei commenti DEVE esistere nella tabella users"    │
+│                                                                         │
+│  ON DELETE CASCADE                                                      │
+│  ─────────────────                                                      │
+│  Significa: "Se cancelli un utente, cancella anche i suoi commenti"     │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 2️⃣ CONNESSIONE AL DATABASE
+
+```php
+<?php
+// ═══════════════════════════════════════════════════════════════
+// CONNESSIONE.PHP - Crea il collegamento tra PHP e MySQL
+// ═══════════════════════════════════════════════════════════════
+
+// CREDENZIALI DI ACCESSO AL DATABASE
+$hostname = "localhost";    // Dove si trova il server (di solito localhost)
+$dbname = "mensajes";       // Nome del database
+$user = "root";             // Nome utente MySQL
+$pass = "";                 // Password MySQL (vuota in sviluppo locale)
+
+// TENTATIVO DI CONNESSIONE
 try {
-$conn = new PDO(&quot;mysql:host=$hostname;dbname=$dbname;&quot;, $user, $pass);
-$conn-&gt;setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    // Crea oggetto PDO per connettersi
+    // PDO = PHP Data Objects (modo sicuro per parlare col database)
+    $conn = new PDO("mysql:host=$hostname;dbname=$dbname;", $user, $pass);
+    
+    // Imposta: se c'è un errore, lancia un'eccezione
+    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    
 } catch (PDOException $e) {
-die(&quot;Errore: &quot; . $e-&gt;getMessage());
+    // Se la connessione fallisce, mostra errore e ferma tutto
+    die("Errore: " . $e->getMessage());
 }
-?&gt;
-3 Pagina HTML / Form
-a) Login form (index_form.php)
+?>
+```
 
-● Mostra form con username/email e password
-● Mostra eventuale errore memorizzato in sessione
+**Schema visivo della connessione:**
 
-+-------------------------+
-| [Errore se presente] |
-| Username/Email [______] |
-| Password [______] |
-| [Accedi] |
-| [Link Registrazione] |
-+-------------------------+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    COME FUNZIONA PDO                             │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   PHP                           MySQL                            │
+│   ┌─────────┐                   ┌─────────────┐                  │
+│   │  $conn  │ ════════════════▶ │  DATABASE   │                  │
+│   │  (PDO)  │    "ponte"        │  "mensajes" │                  │
+│   └─────────┘                   └─────────────┘                  │
+│                                                                  │
+│   new PDO("mysql:host=localhost;dbname=mensajes", "root", "")    │
+│   ─────────────────────────────────────────────────────────────  │
+│        │              │              │            │      │       │
+│        │              │              │            │      │       │
+│        ▼              ▼              ▼            ▼      ▼       │
+│   Tipo database   Server      Nome database  Utente  Password    │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+```
 
-b) Registrazione form (register_form.php)
-● Mostra form con username, email e password
-● Mostra eventuale errore memorizzato in sessione
+**Try-Catch spiegato:**
 
-4 Logica PHP
-a) Login (login.php)
-● Riceve dati da index_form.php
-● Controlla utente esiste
-● Controlla password con password_verify()
-● Blocca utente se tentativi &gt;= 5 (opzionale)
-● Aggiorna tentativi:
-○ Password corretta → reset tentativi
-○ Password errata → incrementa tentativi
-● Salva info in sessione: user_id, username
-● Redirect su dashboard.php o ritorno al form con errore
+```
+┌─────────────────────────────────────────────────────────┐
+│                    TRY-CATCH                            │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│   try {                                                 │
+│       // "Prova a fare questo..."                       │
+│       $conn = new PDO(...);                             │
+│   }                                                     │
+│                     │                                   │
+│                     ▼                                   │
+│        ┌────────────────────────┐                       │
+│        │  Ha funzionato?        │                       │
+│        └────────────────────────┘                       │
+│           │                 │                           │
+│          SÌ                NO                           │
+│           │                 │                           │
+│           ▼                 ▼                           │
+│   Continua il          catch (PDOException $e) {        │
+│   programma               die("Errore: " . $e);         │
+│                        }                                │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
 
-b) Registrazione (register.php)
-● Riceve dati da register_form.php
-● Validazione:
-○ Email valida
-○ Password forte (lunghezza + maiuscola + minuscola + numero + simbolo)
-○ Username/email unici
-● Cripta password con password_hash()
-● Inserisce utente nel DB
-● Redirect al login
+---
 
-c) Dashboard (dashboard.php)
-● Controlla sessione attiva
-● Mostra menu di navigazione per commenti e logout
-● Mostra benvenuto + username
+## 3️⃣ I FORM HTML
 
-d) Logout (logout.php)
-● session_start()
-● session_unset() + session_destroy()
-● Redirect al login
+### Form di Login (index_form.php)
 
-5 Flusso utente
-Utente non loggato
-|
+```php
+<?php
+session_start();  // SEMPRE all'inizio! Attiva le sessioni
+?>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login</title>
+</head>
+<body>
+    <h1>Accedi</h1>
+    
+    <?php
+    // Se c'è un errore salvato in sessione, mostralo
+    if (isset($_SESSION['error'])) {
+        echo "<p style='color:red;'>" . $_SESSION['error'] . "</p>";
+        unset($_SESSION['error']);  // Cancella l'errore dopo averlo mostrato
+    }
+    ?>
+    
+    <!-- Form che invia dati a login.php -->
+    <form action="login.php" method="POST">
+        
+        <label>Username o Email:</label><br>
+        <input type="text" name="username_email" required><br><br>
+        
+        <label>Password:</label><br>
+        <input type="password" name="password" required><br><br>
+        
+        <button type="submit">Accedi</button>
+    </form>
+    
+    <p>Non hai un account? <a href="register_form.php">Registrati</a></p>
+</body>
+</html>
+```
 
-v
-[index_form.php] -- login --&gt; [login.php]
-| |
-| v
-| credenziali OK? ---&gt; [dashboard.php]
-| |
-| NO
-| |
-|&lt;---- ritorno a form con errore
-|
-[register_form.php] -- registra --&gt; [register.php] --&gt; login_form
+**Come funziona il form:**
 
-Array $_SESSION
-● $_SESSION è un array associativo speciale di PHP.
-● Serve a memorizzare dati tra le pagine per un singolo utente mentre la sessione è
-attiva.
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    FLUSSO DEL FORM                                  │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│   1. UTENTE COMPILA IL FORM                                         │
+│      ┌────────────────────────┐                                     │
+│      │ Username: [mario     ] │                                     │
+│      │ Password: [••••••    ] │                                     │
+│      │ [  Accedi  ]           │                                     │
+│      └────────────────────────┘                                     │
+│                  │                                                  │
+│                  │ click su "Accedi"                                │
+│                  ▼                                                  │
+│   2. method="POST" → I dati vengono inviati in modo nascosto        │
+│                                                                     │
+│   3. action="login.php" → I dati arrivano a login.php               │
+│                                                                     │
+│   4. In login.php i dati sono accessibili così:                     │
+│      $_POST['username_email']  → contiene "mario"                   │
+│      $_POST['password']        → contiene la password               │
+│                                                                     │
+│   NOTA: name="..." nel form → diventa la chiave in $_POST           │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
 
-✅ Struttura
-$_SESSION[&#39;chiave&#39;] = valore;
+### Form di Registrazione (register_form.php)
 
-● chiave → nome identificativo della variabile che vuoi salvare (stringa)
-● valore → qualsiasi dato PHP valido (stringhe, numeri, array…)
+```php
+<?php
+session_start();
+?>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Registrazione</title>
+</head>
+<body>
+    <h1>Registrati</h1>
+    
+    <?php
+    if (isset($_SESSION['error'])) {
+        echo "<p style='color:red;'>" . $_SESSION['error'] . "</p>";
+        unset($_SESSION['error']);
+    }
+    ?>
+    
+    <form action="register.php" method="POST">
+        
+        <label>Username:</label><br>
+        <input type="text" name="username" required><br><br>
+        
+        <label>Email:</label><br>
+        <input type="email" name="email" required><br><br>
+        
+        <label>Password:</label><br>
+        <input type="password" name="password" required><br><br>
+        
+        <button type="submit">Registrati</button>
+    </form>
+    
+    <p>Hai già un account? <a href="index_form.php">Accedi</a></p>
+</body>
+</html>
+```
 
-�� Esempio concreto nel login
-$_SESSION[&#39;user_id&#39;] = $user[&#39;id_user&#39;]; // chiave: &#39;user_id&#39;, valore: id numerico utente
-$_SESSION[&#39;username&#39;] = $user[&#39;username&#39;]; // chiave: &#39;username&#39;, valore: stringa
-username
+---
 
-● Dopo questo, qualsiasi pagina che fa session_start() può leggere:
+## 4️⃣ LOGICA PHP
 
-echo $_SESSION[&#39;username&#39;]; // stampa il nome dell’utente loggato
+### A) Login (login.php) - SPIEGAZIONE DETTAGLIATA
 
-�� Not
-L’array vive finché la sessione è attiva (chiudi il browser o fai
-session_destroy() per cancellarlo)
+```php
+<?php
+// ═══════════════════════════════════════════════════════════════
+// LOGIN.PHP - Gestisce l'autenticazione dell'utente
+// ═══════════════════════════════════════════════════════════════
 
-● Può contenere qualsiasi dato che serve tra pagine, ma non dati sensibili in
-chiaro se non criptati o hashati quando serve
+session_start();  // Attiva le sessioni (OBBLIGATORIO come prima riga)
+require_once 'connessione.php';  // Importa la connessione $conn
 
-Schema $_SESSION
-+------------------------+
-| $_SESSION | ← array associativo speciale
-+------------------------+
-| chiave | valore |
-|------------------------|
-| &#39;user_id&#39; | 17 | ← id numerico dell&#39;utente loggato
-| &#39;username&#39; | &quot;Mario&quot; | ← nome utente loggato
-| &#39;error&#39; | &quot;Credenziali non valide&quot; | ← messaggi di errore tra
-pagine
-+------------------------+
+// ─────────────────────────────────────────────────────────────────
+// PASSO 1: Verifico che il form sia stato inviato con metodo POST
+// ─────────────────────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    
+    // ─────────────────────────────────────────────────────────────
+    // PASSO 2: Recupero i dati dal form e li "pulisco"
+    // ─────────────────────────────────────────────────────────────
+    $username_email = trim($_POST['username_email']);  // trim() rimuove spazi
+    $password = $_POST['password'];  // La password non si modifica
+    
+    // ─────────────────────────────────────────────────────────────
+    // PASSO 3: Cerco l'utente nel database (per username O email)
+    // ─────────────────────────────────────────────────────────────
+    $sql = "SELECT * FROM users WHERE username = :input OR email = :input";
+    $stmt = $conn->prepare($sql);  // Prepara la query (sicurezza!)
+    $stmt->execute([':input' => $username_email]);  // Esegue con il valore
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);  // Ottiene il risultato
+    
+    // ─────────────────────────────────────────────────────────────
+    // PASSO 4: Verifico se l'utente esiste
+    // ─────────────────────────────────────────────────────────────
+    if ($user) {
+        // L'utente esiste! Ora controllo se è bloccato
+        
+        // ─────────────────────────────────────────────────────────
+        // PASSO 4a: Controllo blocco temporaneo
+        // ─────────────────────────────────────────────────────────
+        if ($user['bloccato_fino'] !== null && 
+            strtotime($user['bloccato_fino']) > time()) {
+            // Account ancora bloccato
+            $_SESSION['error'] = "Account bloccato. Riprova più tardi.";
+            header("Location: index_form.php");
+            exit;
+        }
+        
+        // ─────────────────────────────────────────────────────────
+        // PASSO 5: Verifico la password
+        // ─────────────────────────────────────────────────────────
+        if (password_verify($password, $user['password'])) {
+            // ✅ PASSWORD CORRETTA!
+            
+            // Reset dei tentativi falliti
+            $sql = "UPDATE users SET tentativi = 0, bloccato_fino = NULL 
+                    WHERE id_user = :id";
+            $stmt = $conn->prepare($sql);
+            $stmt->execute([':id' => $user['id_user']]);
+            
+            // Salvo i dati in sessione
+            $_SESSION['user_id'] = $user['id_user'];
+            $_SESSION['username'] = $user['username'];
+            
+            // Redirect alla dashboard
+            header("Location: dashboard.php");
+            exit;
+            
+        } else {
+            // ❌ PASSWORD SBAGLIATA
+            
+            $nuovi_tentativi = $user['tentativi'] + 1;
+            
+            if ($nuovi_tentativi >= 5) {
+                // Blocco l'account per 15 minuti
+                $blocco = date('Y-m-d H:i:s', strtotime('+15 minutes'));
+                $sql = "UPDATE users SET tentativi = :tent, bloccato_fino = :blocco 
+                        WHERE id_user = :id";
+                $stmt = $conn->prepare($sql);
+                $stmt->execute([
+                    ':tent' => $nuovi_tentativi,
+                    ':blocco' => $blocco,
+                    ':id' => $user['id_user']
+                ]);
+                $_SESSION['error'] = "Troppi tentativi. Account bloccato per 15 minuti.";
+            } else {
+                // Incremento solo i tentativi
+                $sql = "UPDATE users SET tentativi = :tent WHERE id_user = :id";
+                $stmt = $conn->prepare($sql);
+                $stmt->execute([
+                    ':tent' => $nuovi_tentativi,
+                    ':id' => $user['id_user']
+                ]);
+                $rimasti = 5 - $nuovi_tentativi;
+                $_SESSION['error'] = "Password errata. Tentativi rimasti: $rimasti";
+            }
+            
+            header("Location: index_form.php");
+            exit;
+        }
+        
+    } else {
+        // ❌ UTENTE NON TROVATO
+        $_SESSION['error'] = "Utente non trovato.";
+        header("Location: index_form.php");
+        exit;
+    }
+}
+?>
+```
 
-�� Come funziona
-1. Salvare dati:
+**Schema visivo del processo di login:**
 
-$_SESSION[&#39;user_id&#39;] = $user[&#39;id_user&#39;];
-$_SESSION[&#39;username&#39;] = $user[&#39;username&#39;];
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         FLUSSO LOGIN.PHP                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   Dati dal form                                                         │
+│   $_POST['username_email'] = "mario"                                    │
+│   $_POST['password'] = "Password123!"                                   │
+│          │                                                              │
+│          ▼                                                              │
+│   ┌─────────────────────────────────┐                                   │
+│   │ Cerca utente nel database       │                                   │
+│   │ WHERE username = 'mario'        │                                   │
+│   │ OR email = 'mario'              │                                   │
+│   └─────────────────────────────────┘                                   │
+│          │                                                              │
+│          ▼                                                              │
+│   ┌─────────────────────┐                                               │
+│   │ Utente trovato?     │                                               │
+│   └─────────────────────┘                                               │
+│      │              │                                                   │
+│     NO             SÌ                                                   │
+│      │              │                                                   │
+│      ▼              ▼                                                   │
+│   Errore     ┌─────────────────────┐                                    │
+│              │ Account bloccato?   │                                    │
+│              └─────────────────────┘                                    │
+│                 │              │                                        │
+│                SÌ             NO                                        │
+│                 │              │                                        │
+│                 ▼              ▼                                        │
+│              Errore    ┌───────────────────────────┐                    │
+│                        │ password_verify()         │                    │
+│                        │ Confronta password        │                    │
+│                        └───────────────────────────┘                    │
+│                           │                │                            │
+│                          SÌ               NO                            │
+│                           │                │                            │
+│                           ▼                ▼                            │
+│                   ┌──────────────┐  ┌──────────────────┐                │
+│                   │ LOGIN OK!    │  │ Incrementa       │                │
+│                   │ - Reset tent.│  │ tentativi        │                │
+│                   │ - Sessione   │  │                  │                │
+│                   │ - Dashboard  │  │ tentativi >= 5?  │                │
+│                   └──────────────┘  │ → Blocca account │                │
+│                                     └──────────────────┘                │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
-2. Leggere dati:
+**Come funziona `password_verify()`:**
 
-echo $_SESSION[&#39;username&#39;]; // stampa &quot;Mario&quot;
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      PASSWORD_VERIFY() SPIEGATO                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   password_verify($password_inserita, $hash_dal_database)               │
+│                                                                         │
+│   ┌─────────────────┐        ┌─────────────────────────────────────┐    │
+│   │ "Password123!"  │        │ "$2y$10$xyzABC123..." (hash)        │    │
+│   │ (dal form)      │        │ (dal database)                      │    │
+│   └────────┬────────┘        └─────────────────┬───────────────────┘    │
+│            │                                   │                        │
+│            └───────────────┬───────────────────┘                        │
+│                            │                                            │
+│                            ▼                                            │
+│                  ┌─────────────────────┐                                │
+│                  │  password_verify()  │                                │
+│                  │  Confronta usando   │                                │
+│                  │  lo stesso algoritmo│                                │
+│                  └─────────────────────┘                                │
+│                            │                                            │
+│               ┌────────────┴────────────┐                               │
+│               │                         │                               │
+│               ▼                         ▼                               │
+│          true (match)             false (no match)                      │
+│                                                                         │
+│   NOTA: Non puoi semplicemente fare $password == $hash                  │
+│         perché l'hash è IRREVERSIBILE!                                  │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
-3. Cancellare dati:
+### B) Registrazione (register.php) - SPIEGAZIONE DETTAGLIATA
 
-unset($_SESSION[&#39;error&#39;]); // rimuove solo la chiave &#39;error&#39;
-session_unset(); // cancella tutte le chiavi
-session_destroy(); // termina la sessione
+```php
+<?php
+// ═══════════════════════════════════════════════════════════════
+// REGISTER.PHP - Gestisce la creazione di nuovi utenti
+// ═══════════════════════════════════════════════════════════════
 
-Concetti chiave
-● $_SESSION è come un cassetto personale per ogni utente.
-● La chiave è il nome dell’oggetto che vuoi salvare.
-● Il valore è il contenuto che vuoi ricordare tra le pagine.
-● Serve per:
-○ riconoscere l’utente loggato
-○ passare messaggi di errore
-○ conservare temporaneamente altre info durante la sessione
+session_start();
+require_once 'connessione.php';
 
-Flusso utente + $_SESSION
-[ index_form.php ] ← Form login
-|
-| POST username + password
-v
-[ login.php ] ← Logica PHP
-|
-| 1) Controllo username/email
-| 2) Verifica password con password_verify()
-| 3) Aggiorna $_SESSION se OK:
-| $_SESSION[&#39;user_id&#39;] = id_user
-| $_SESSION[&#39;username&#39;] = username
-| (oppure $_SESSION[&#39;error&#39;] se login fallito)
-v
-+--------------------------+
-| |
-| credenziali valide? |
-| |
-YES NO
-| |
-v v
-[ dashboard.php ] [ index_form.php ]
-Legge $_SESSION[&#39;username&#39;] Mostra $_SESSION[&#39;error&#39;]
-Mostra menu + contenuti
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    
+    // ─────────────────────────────────────────────────────────────
+    // PASSO 1: Recupero e pulizia dati
+    // ─────────────────────────────────────────────────────────────
+    $username = trim($_POST['username']);
+    $email = trim($_POST['email']);
+    $password = $_POST['password'];
+    
+    // ─────────────────────────────────────────────────────────────
+    // PASSO 2: VALIDAZIONI
+    // ─────────────────────────────────────────────────────────────
+    
+    // 2a) Validazione email
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $_SESSION['error'] = "Email non valida.";
+        header("Location: register_form.php");
+        exit;
+    }
+    
+    // 2b) Validazione password (deve essere "forte")
+    /*
+        REQUISITI PASSWORD:
+        - Almeno 8 caratteri
+        - Almeno una lettera maiuscola
+        - Almeno una lettera minuscola
+        - Almeno un numero
+        - Almeno un simbolo speciale
+    */
+    $pattern = '/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/';
+    
+    if (!preg_match($pattern, $password)) {
+        $_SESSION['error'] = "La password deve contenere: 8+ caratteri, maiuscola, minuscola, numero, simbolo.";
+        header("Location: register_form.php");
+        exit;
+    }
+    
+    // 2c) Controllo se username già esiste
+    $sql = "SELECT id_user FROM users WHERE username = :username";
+    $stmt = $conn->prepare($sql);
+    $stmt->execute([':username' => $username]);
+    
+    if ($stmt->fetch()) {
+        $_SESSION['error'] = "Username già in uso.";
+        header("Location: register_form.php");
+        exit;
+    }
+    
+    // 2d) Controllo se email già esiste
+    $sql = "SELECT id_user FROM users WHERE email = :email";
+    $stmt = $conn->prepare($sql);
+    $stmt->execute([':email' => $email]);
+    
+    if ($stmt->fetch()) {
+        $_SESSION['error'] = "Email già registrata.";
+        header("Location: register_form.php");
+        exit;
+    }
+    
+    // ─────────────────────────────────────────────────────────────
+    // PASSO 3: Cripto la password
+    // ─────────────────────────────────────────────────────────────
+    $password_hash = password_hash($password, PASSWORD_DEFAULT);
+    
+    // ─────────────────────────────────────────────────────────────
+    // PASSO 4: Inserisco l'utente nel database
+    // ─────────────────────────────────────────────────────────────
+    $sql = "INSERT INTO users (username, email, password) 
+            VALUES (:username, :email, :password)";
+    $stmt = $conn->prepare($sql);
+    $stmt->execute([
+        ':username' => $username,
+        ':email' => $email,
+        ':password' => $password_hash
+    ]);
+    
+    // ─────────────────────────────────────────────────────────────
+    // PASSO 5: Redirect al login
+    // ─────────────────────────────────────────────────────────────
+    $_SESSION['success'] = "Registrazione completata! Ora puoi accedere.";
+    header("Location: index_form.php");
+    exit;
+}
+?>
+```
 
-�� Altri casi
-● Logout (logout.php)
+**Schema della validazione password:**
 
-[ dashboard.php ] --clicca logout--&gt; [ logout.php ]
-|
-v
-session_unset() + session_destroy()
-|
-v
-[ index_form.php ] ← $_SESSION ora vuota
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    REGEX PASSWORD SPIEGATA                              │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/                    │
+│                                                                         │
+│   Scomponiamo:                                                          │
+│   ─────────────                                                         │
+│                                                                         │
+│   ^              → Inizio stringa                                       │
+│                                                                         │
+│   (?=.*[a-z])    → DEVE contenere almeno una minuscola                  │
+│                    (?=...) = "guarda avanti e verifica che..."          │
+│                    .*      = "qualsiasi carattere, quante volte vuoi"   │
+│                    [a-z]   = "una lettera minuscola"                    │
+│                                                                         │
+│   (?=.*[A-Z])    → DEVE contenere almeno una maiuscola                  │
+│                                                                         │
+│   (?=.*\d)       → DEVE contenere almeno un numero                      │
+│                    \d = digit (0-9)                                     │
+│                                                                         │
+│   (?=.*[\W_])    → DEVE contenere almeno un simbolo                     │
+│                    \W = non-word character (simboli)                    │
+│                    _  = underscore (incluso esplicitamente)             │
+│                                                                         │
+│   .{8,}          → Almeno 8 caratteri totali                            │
+│                    . = qualsiasi carattere                              │
+│                    {8,} = minimo 8, nessun massimo                      │
+│                                                                         │
+│   $              → Fine stringa                                         │
+│                                                                         │
+│   ESEMPIO:                                                              │
+│   "Password123!" ✅ Valida                                               │
+│   "password123" ❌ Manca maiuscola e simbolo                            │
+│   "Pass1!"      ❌ Meno di 8 caratteri                                  │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
-● Registrazione
+**Come funziona `password_hash()`:**
 
-[ register_form.php ] ← Form registrazione
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      PASSWORD_HASH() SPIEGATO                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   $hash = password_hash("Password123!", PASSWORD_DEFAULT);              │
+│                                                                         │
+│   Input: "Password123!"                                                 │
+│          ↓                                                              │
+│   ┌─────────────────────────────────────────┐                           │
+│   │     ALGORITMO DI HASHING                │                           │
+│   │     (bcrypt con salt casuale)           │                           │
+│   └─────────────────────────────────────────┘                           │
+│          ↓                                                              │
+│   Output: "$2y$10$xyzABC123defGHI456jklMNO789pqrSTU..."                  │
+│                                                                         │
+│   CARATTERISTICHE:                                                      │
+│   • Irreversibile (non puoi tornare alla password originale)            │
+│   • Ogni volta genera un hash DIVERSO (per via del salt)                │
+│   • Sicuro contro attacchi rainbow table                                │
+│   • PASSWORD_DEFAULT usa l'algoritmo più sicuro disponibile             │
+│                                                                         │
+│   PERCHÉ SERVONO 255 CARATTERI NEL DATABASE?                            │
+│   L'hash di bcrypt è lungo circa 60 caratteri, ma 255 lascia           │
+│   spazio per algoritmi futuri che potrebbero generare hash più lunghi   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
-|
-| POST username, email, password
-v
-[ register.php ] ← Logica PHP
-|
-| Validazione + password_hash()
-| Inserimento nel DB
-v
-[ index_form.php ] ← pronto per login
+### C) Dashboard (dashboard.php)
+
+```php
+<?php
+// ═══════════════════════════════════════════════════════════════
+// DASHBOARD.PHP - Area riservata agli utenti loggati
+// ═══════════════════════════════════════════════════════════════
+
+session_start();
+
+// ─────────────────────────────────────────────────────────────────
+// CONTROLLO ACCESSO: Se non c'è user_id in sessione → non loggato
+// ─────────────────────────────────────────────────────────────────
+if (!isset($_SESSION['user_id'])) {
+    // Utente non autorizzato, rimando al login
+    header("Location: index_form.php");
+    exit;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Se arrivo qui, l'utente È loggato
+// ─────────────────────────────────────────────────────────────────
+$username = $_SESSION['username'];  // Recupero il nome dalla sessione
+?>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard</title>
+</head>
+<body>
+    <h1>Benvenuto, <?php echo htmlspecialchars($username); ?>!</h1>
+    
+    <nav>
+        <ul>
+            <li><a href="commenti.php">I miei commenti</a></li>
+            <li><a href="profilo.php">Profilo</a></li>
+            <li><a href="logout.php">Logout</a></li>
+        </ul>
+    </nav>
+    
+    <main>
+        <p>Questa è la tua area personale.</p>
+    </main>
+</body>
+</html>
+```
+
+**Perché `htmlspecialchars()`?**
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    HTMLSPECIALCHARS() SPIEGATO                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   PROBLEMA: Se un utente si registra con username:                      │
+│             <script>alert('Hacked!')</script>                           │
+│                                                                         │
+│   SENZA htmlspecialchars():                                             │
+│   echo $username;                                                       │
+│   → Il browser ESEGUE lo script! (XSS Attack)                           │
+│                                                                         │
+│   CON htmlspecialchars():                                               │
+│   echo htmlspecialchars($username);                                     │
+│   → Output: &lt;script&gt;alert('Hacked!')&lt;/script&gt;                │
+│   → Il browser MOSTRA il testo, non lo esegue                           │
+│                                                                         │
+│   CONVERTE:                                                             │
+│   < → &lt;                                                              │
+│   > → &gt;                                                              │
+│   " → &quot;                                                            │
+│   & → &amp;                                                             │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### D) Logout (logout.php)
+
+```php
+<?php
+// ═══════════════════════════════════════════════════════════════
+// LOGOUT.PHP - Termina la sessione dell'utente
+// ═══════════════════════════════════════════════════════════════
+
+session_start();  // Devo prima "attivare" la sessione per poterla distruggere
+
+// ─────────────────────────────────────────────────────────────────
+// PASSO 1: Cancella tutte le variabili di sessione
+// ─────────────────────────────────────────────────────────────────
+session_unset();
+// $_SESSION ora è un array vuoto: []
+
+// ─────────────────────────────────────────────────────────────────
+// PASSO 2: Distrugge la sessione
+// ─────────────────────────────────────────────────────────────────
+session_destroy();
+// Il file di sessione sul server viene eliminato
+
+// ─────────────────────────────────────────────────────────────────
+// PASSO 3: Redirect al login
+// ─────────────────────────────────────────────────────────────────
+header("Location: index_form.php");
+exit;
+?>
+```
+
+**Differenza tra `session_unset()` e `session_destroy()`:**
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    SESSION_UNSET vs SESSION_DESTROY                     │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   PRIMA:                                                                │
+│   $_SESSION = ['user_id' => 17, 'username' => 'Mario']                  │
+│                                                                         │
+│   session_unset();                                                      │
+│   ─────────────────                                                     │
+│   → Svuota l'array: $_SESSION = []                                      │
+│   → La sessione ESISTE ancora, ma è vuota                               │
+│                                                                         │
+│   session_destroy();                                                    │
+│   ─────────────────                                                     │
+│   → Elimina la sessione dal server                                      │
+│   → Il cookie di sessione diventa invalido                              │
+│                                                                         │
+│   PERCHÉ ENTRAMBI?                                                      │
+│   Per sicurezza completa: prima svuoti, poi distruggi.                  │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 5️⃣ SESSIONI - Il Cuore del Sistema
+
+### Come Funzionano le Sessioni
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    MECCANISMO DELLE SESSIONI                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   1. UTENTE FA LOGIN                                                    │
+│      Browser                              Server                        │
+│      ┌──────────┐                        ┌──────────────────────┐       │
+│      │          │ ───login OK──────────▶ │ Crea file sessione   │       │
+│      │          │                        │ sess_abc123xyz       │       │
+│      │          │ ◀──cookie──────────── │ {user_id: 17,        │       │
+│      │          │   PHPSESSID=abc123xyz  │  username: "Mario"}  │       │
+│      └──────────┘                        └──────────────────────┘       │
+│                                                                         │
+│   2. UTENTE VISITA ALTRA PAGINA                                         │
+│      Browser                              Server                        │
+│      ┌──────────┐                        ┌──────────────────────┐       │
+│      │          │ ──richiesta + cookie─▶ │ Legge abc123xyz      │       │
+│      │          │   PHPSESSID=abc123xyz  │ Trova: user_id=17    │       │
+│      │          │ ◀──risposta────────── │ "Ah, sei Mario!"     │       │
+│      └──────────┘                        └──────────────────────┘       │
+│                                                                         │
+│   3. UTENTE FA LOGOUT                                                   │
+│      Browser                              Server                        │
+│      ┌──────────┐                        ┌──────────────────────┐       │
+│      │          │ ──logout + cookie────▶ │ Trova abc123xyz      │       │
+│      │          │                        │ session_destroy()    │       │
+│      │          │ ◀──redirect────────── │ File eliminato!      │       │
+│      └──────────┘                        └──────────────────────┘       │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### L'Array $_SESSION
+
+```php
+// ═══════════════════════════════════════════════════════════════
+// $_SESSION È UN ARRAY ASSOCIATIVO SPECIALE
+// ═══════════════════════════════════════════════════════════════
+
+// SALVARE DATI (in login.php dopo login riuscito)
+$_SESSION['user_id'] = 17;
+$_SESSION['username'] = "Mario";
+$_SESSION['ruolo'] = "admin";
+
+// LEGGERE DATI (in dashboard.php)
+echo $_SESSION['username'];  // Output: Mario
+
+// VERIFICARE SE UN DATO ESISTE
+if (isset($_SESSION['user_id'])) {
+    echo "Utente loggato!";
+}
+
+// CANCELLARE UN SINGOLO DATO
+unset($_SESSION['error']);  // Rimuove solo 'error'
+
+// CANCELLARE TUTTO
+session_unset();  // Svuota l'array
+session_destroy();  // Elimina la sessione
+```
+
+**Visualizzazione $_SESSION:**
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         $_SESSION                                       │
+│                    (Array Associativo)                                  │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   INDICE (chiave)     │    VALORE                                       │
+│   ────────────────────┼─────────────────────────────────                │
+│   'user_id'           │    17                                           │
+│   'username'          │    "Mario"                                      │
+│   'ruolo'             │    "admin"                                      │
+│   'error'             │    "Password errata"    ← temporaneo            │
+│                                                                         │
+│   ACCESSO:                                                              │
+│   $_SESSION['user_id']    → restituisce 17                              │
+│   $_SESSION['username']   → restituisce "Mario"                         │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 6️⃣ FLUSSO COMPLETO DEL SISTEMA
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         FLUSSO COMPLETO                                 │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│                        ┌─────────────────┐                              │
+│                        │  UTENTE NUOVO   │                              │
+│                        └────────┬────────┘                              │
+│                                 │                                       │
+│                                 ▼                                       │
+│   ┌─────────────────────────────────────────────────────────┐           │
+│   │                  register_form.php                       │           │
+│   │  ┌───────────────────────────────────────────┐          │           │
+│   │  │ Username: [____________]                   │          │           │
+│   │  │ Email:    [____________]                   │          │           │
+│   │  │ Password: [____________]                   │          │           │
+│   │  │           [Registrati]                     │          │           │
+│   │  └───────────────────────────────────────────┘          │           │
+│   └────────────────────────┬────────────────────────────────┘           │
+│                            │ POST                                       │
+│                            ▼                                            │
+│   ┌─────────────────────────────────────────────────────────┐           │
+│   │                    register.php                          │           │
+│   │  • Valida email                                          │           │
+│   │  • Valida password (regex)                               │           │
+│   │  • Controlla duplicati                                   │           │
+│   │  • password_hash()                                       │           │
+│   │  • INSERT INTO users                                     │           │
+│   └────────────────────────┬────────────────────────────────┘           │
+│                            │ redirect                                   │
+│                            ▼                                            │
+│   ┌─────────────────────────────────────────────────────────┐           │
+│   │                   index_form.php                         │◀─────┐   │
+│   │  ┌───────────────────────────────────────────┐          │      │   │
+│   │  │ [Messaggio errore/successo]                │          │      │   │
+│   │  │ Username/Email: [____________]             │          │      │   │
+│   │  │ Password:       [____________]             │          │      │   │
+│   │  │                 [Accedi]                   │          │      │   │
+│   │  └───────────────────────────────────────────┘          │      │   │
+│   └────────────────────────┬────────────────────────────────┘      │   │
+│                            │ POST                                   │   │
+│                            ▼                                        │   │
+│   ┌─────────────────────────────────────────────────────────┐      │   │
+│   │                      login.php                           │      │   │
+│   │  • Cerca utente (username OR email)                      │      │   │
+│   │  • Controlla blocco                                      │      │   │
+│   │  • password_verify()                                     │      │   │
+│   │  • Gestisce tentativi                                    │──────┘   │
+│   │  • $_SESSION['user_id'] = ...                            │ errore   │
+│   │  • $_SESSION['username'] = ...                           │          │
+│   └────────────────────────┬────────────────────────────────┘          │
+│                            │ redirect (successo)                        │
+│                            ▼                                            │
+│   ┌─────────────────────────────────────────────────────────┐           │
+│   │                   dashboard.php                          │           │
+│   │  • Controlla $_SESSION['user_id']                        │           │
+│   │  • Mostra "Benvenuto, {username}!"                       │           │
+│   │  • Menu navigazione                                      │           │
+│   │  • [Logout]                                              │           │
+│   └────────────────────────┬────────────────────────────────┘           │
+│                            │ click logout                               │
+│                            ▼                                            │
+│   ┌─────────────────────────────────────────────────────────┐           │
+│   │                     logout.php                           │           │
+│   │  • session_unset()                                       │           │
+│   │  • session_destroy()                                     │           │
+│   │  • redirect → index_form.php                             │           │
+│   └─────────────────────────────────────────────────────────┘           │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 7️⃣ CONCETTI CHIAVE RIASSUNTI
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    RIASSUNTO CONCETTI CHIAVE                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  SICUREZZA PASSWORD                                                     │
+│  ─────────────────                                                      │
+│  • password_hash() → Cripta la password (SALVARE nel DB)                │
+│  • password_verify() → Verifica la password (LOGIN)                     │
+│  • MAI salvare password in chiaro!                                      │
+│                                                                         │
+│  SESSIONI                                                               │
+│  ────────                                                               │
+│  • session_start() → SEMPRE come prima istruzione                       │
+│  • $_SESSION → Array per dati persistenti tra pagine                    │
+│  • session_destroy() → Termina la sessione (logout)                     │
+│                                                                         │
+│  PDO (Database)                                                         │
+│  ──────────────                                                         │
+│  • $conn->prepare($sql) → Prepara query sicura                          │
+│  • $stmt->execute([...]) → Esegue con parametri                         │
+│  • $stmt->fetch() → Ottiene un risultato                                │
+│  • :placeholder → Previene SQL Injection                                │
+│                                                                         │
+│  VALIDAZIONE                                                            │
+│  ──────────                                                             │
+│  • filter_var() → Valida email, URL, ecc.                               │
+│  • preg_match() → Valida con regex (password forte)                     │
+│  • htmlspecialchars() → Previene XSS quando mostri dati                 │
+│                                                                         │
+│  REDIRECT                                                               │
+│  ────────                                                               │
+│  • header("Location: pagina.php") → Reindirizza                         │
+│  • exit; → SEMPRE dopo header() per fermare lo script                   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+Vuoi che approfondisca qualche parte specifica? 🎯
